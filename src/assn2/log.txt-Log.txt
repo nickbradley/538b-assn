@@ -2,13 +2,49 @@ Slave process {"Slave process":1}
 Initialization Complete
 Slave process {"Slave process":2}
 Sending Message
+Slave process {"Slave process":2}
+Receiving message
 Slave process {"Slave process":3}
+Sending Message
+Slave process {"Slave process":3}
+Receiving message
+Slave process {"Slave process":4}
+Sending Message
+Slave process {"Slave process":4}
+Receiving message
+Slave process {"Slave process":5}
+Sending Message
+Slave process {"Slave process":5}
+Receiving message
+Slave process {"Slave process":6}
+Sending Message
+Slave process {"Slave process":6}
+Receiving message
+Slave process {"Slave process":7}
+Sending Message
+Slave process {"Slave process":7}
+Receiving message
+Slave process {"Slave process":8}
 Sending Message
 Slave process {"Slave process":8}
 Receiving message
+Slave process {"Slave process":9}
+Sending Message
 Slave process {"Slave process":9}
 Receiving message
 Slave process {"Slave process":10}
 Sending Message
 Slave process {"Slave process":10}
+Receiving message
+Slave process {"Slave process":11}
+Sending Message
+Slave process {"Slave process":11}
+Receiving message
+Slave process {"Slave process":12}
+Sending Message
+Slave process {"Slave process":12}
+Receiving message
+Slave process {"Slave process":13}
+Sending Message
+Slave process {"Slave process":13}
 Receiving message
