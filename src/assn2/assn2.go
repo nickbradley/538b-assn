@@ -9,7 +9,7 @@ import (
   "log"
   "github.com/arcaneiceman/GoVector/govec"
   "bufio"
-
+  "math"
 )
 
 type Request struct {
@@ -17,6 +17,37 @@ type Request struct {
   Payload int
 }
 
+type RemoteClock struct {
+  Delta int
+  Addr *net.UDPAddr
+}
+
+func getAvg(a []int, threshold int) int {
+  sum := 0
+  count := 0
+  b := a
+
+  for i,e := range a {
+    for j,f := range b {
+      if (i != j && math.Abs(float64(e-f)) <= float64(threshold)) {
+        fmt.Printf("Adding %v to sum %v\n",e,sum)
+        sum += e
+        count++
+        break
+      }
+    }
+  }
+
+  avg := -1
+  //fmt.Println("Number for average %v", count)
+  if count > 0 {
+    fmt.Printf("Dividing %v by %v\n",sum,count)
+    avg = int(float64(sum) / float64(count))
+
+  }
+  return avg
+
+}
 
 
 /****** HELPER FUNCTIONS ******/
@@ -91,7 +122,7 @@ func slave(address string, initTime int, logfile string) {
       case <- clockTicker.C:
         oldTime := clock.GetTime()
         clock.SetTime(oldTime + 1)
-        fmt.Println("Clock updated to ", clock.ToString())
+        //fmt.Println("Clock updated to ", clock.ToString())
       }
     }
   }()
@@ -100,21 +131,21 @@ func slave(address string, initTime int, logfile string) {
   for {
     buf := make([]byte, 1024)
     var inRequest Request
-    _,raddr,_ := conn.ReadFromUDP(buf)  // block waiting for reply
-
+    _,masterAddr,_ := conn.ReadFromUDP(buf)  // block waiting for reply
+    //conn.ReadFromUDP(buf)  // block waiting for reply
     Logger.UnpackReceive("Receiving message", buf, &inRequest)
 
     switch inRequest.Verb {
     case "GET":
-      fmt.Println("Master requested my clock value")
+      fmt.Printf("%v requested my clock value...", masterAddr)
       sendClock := Logger.PrepareSend("Sending Message", clock)
-      conn.WriteToUDP(sendClock,raddr)
-      fmt.Println("I sent Master my clock value")
+      conn.WriteToUDP(sendClock,masterAddr)
+      fmt.Printf("sent value %v.\n",clock.ToString())
     case "PUT":
-      delta := inRequest.Payload
-      clock.Correct(delta)
+      clockOffset := inRequest.Payload
+      clock.Correct(clockOffset)
     default:
-      log.Fatal("Slave received invalid request from master.")
+      log.Fatal("Received invalid request.")
     }
 
   }
@@ -124,9 +155,10 @@ func slave(address string, initTime int, logfile string) {
 
 func master(address string, initTime int, threshold int, slavesfile string, logfile string) {
   addr,_ := net.ResolveUDPAddr("udp", address)
-  conn,err := net.DialUDP("udp", nil, addr)
-  if err != nil {
-    log.Fatal("Couldn't connect")
+  //conn,err := net.DialUDP("udp", nil, addr)
+  conn,err := net.ListenUDP("udp", addr)
+   if err != nil {
+     log.Fatal("Couldn't connect")
   }
   Logger := govec.Initialize("Slave process", logfile)
 
@@ -161,58 +193,105 @@ func master(address string, initTime int, threshold int, slavesfile string, logf
      select {
      case <- pollTicker.C:
        fmt.Println("Starting sync round")
-       slaveCh := make(chan int)
+       ch := make(chan RemoteClock)
        for i,slaveAddress := range slaveAddresses {
-         go func(slaveAddress string) {
-           fmt.Printf("\tGetting clock vaule for slave %v at %v\n",i,slaveAddress)
 
+         //slaveCh := make(chan int)
+         //timeout := make(chan bool)
+         go func(i int, slaveAddress string) {
+           fmt.Printf("\tGetting clock vaule for slave %v at %v\n",i,slaveAddress)
+           addr,err := net.ResolveUDPAddr("udp", slaveAddress)
+           if (err != nil){
+             log.Fatal(err)
+           }
 
            outRequest := Request{"GET",1000}
            finalSend := Logger.PrepareSend("Sending Message", outRequest)
-           //conn.WriteToUDP(finalSend, addr)
-           conn.Write(finalSend)
+           conn.WriteToUDP(finalSend, addr)
+
            //Rcv clock
            buf := make([]byte, 1024)
            var slaveClock Clock
            conn.ReadFromUDP(buf)  // block waiting for reply
            Logger.UnpackReceive("Receiving message", buf, &slaveClock)
 
+           delta := clock.GetTime() - slaveClock.GetTime()
+           ch <- RemoteClock{delta, addr}
+         }(i, slaveAddress)
 
-           slaveCh <- slaveClock.GetTime()
-         }(slaveAddress)
+        //  select {
+        //  case val := <-slaveCh:
+        //    ch <- val
+        //  case <-timeout:
+        //    ch <- -1
+        //  }
+       }
+       go func() {
+         timeout := make(chan bool)
          go func() {
              time.Sleep(1 * time.Second)
-             slaveCh <- -1
+             timeout <- true
          }()
-       }
-       timesReceived := 1
-       timeSum := 0 //clocks[len(slaveAddresses)]  // master clock
-       select {
-       case val := <-slaveCh:
-         fmt.Printf("A slave returned %v\n",val)
-         if (val >= 0) {
-           timeSum += val
-         }
-         timesReceived++
+         timesReceived := 0
+         remoteClocks := make([]RemoteClock, len(slaveAddresses))
+         L:
+         for {
 
-         if (timesReceived >= len(slaveAddresses)) {
-           timeSum += clock.GetTime()  // include the master clock
-           delta := int(timeSum*1.0/timesReceived)
-           fmt.Println("Do the avg")
-           fmt.Printf("Total %v, num received %v, delta %v\n",timeSum,timesReceived,delta)
+           //timeSum := 0 //clocks[len(slaveAddresses)]  // master clock
+           select {
+           case val := <-ch:
+             fmt.Printf("A slave returned %v\n",val)
+             remoteClocks[timesReceived] = val
+             timesReceived++
 
-           clock.Correct(delta)
-            for i,slaveAddress := range slaveAddresses {
-              go func() {
-                fmt.Printf("\tSetting clock vaule for slave %v at %v\n",i,slaveAddress)
+             fmt.Printf("Times rvcd %v of %v\n",timesReceived,len(slaveAddresses))
+             if (timesReceived >= len(slaveAddresses)){
+               fmt.Println("All slaves repsonded.")
+               break L
+             }
+             /*
+             if (val >= 0) {
+               timeSum += val
+               timesReceived++
+             }
 
-                outRequest := Request{"PUT",delta}
-                finalSend := Logger.PrepareSend("Sending Message", outRequest)
-                conn.Write(finalSend)
-              }()
+
+             if (timesReceived >= len(slaveAddresses)) {
+               timeSum += clock.GetTime()  // include the master clock
+               delta := int(timeSum*1.0/timesReceived)
+               fmt.Println("Do the avg")
+               fmt.Printf("Total %v, num received %v, delta %v\n",timeSum,timesReceived,delta)
+
+               clock.Correct(delta)
+                for i,slaveAddress := range slaveAddresses {
+                  go func() {
+                    fmt.Printf("\tSetting clock vaule for slave %v at %v\n",i,slaveAddress)
+
+                    // outRequest := Request{"PUT",delta}
+                    // finalSend := Logger.PrepareSend("Sending Message", outRequest)
+                    // conn.Write(finalSend)
+                  }()
+               }
+             } */
+           case <-timeout:
+             fmt.Println("Reached timeout.")
+             break L
            }
          }
-       }
+         fmt.Println("Now we are somewhere interesting...")
+         deltas := make([]int, timesReceived)
+         for i,rclock := range remoteClocks {
+           deltas[i] = rclock.Delta
+         }
+
+         avg := getAvg(deltas, threshold)
+         fmt.Printf("This rounds avg is %v\n",avg)
+         // do something cool with the responses we received
+         for _,rclock := range remoteClocks {
+           fmt.Printf("Adjusting %v by %v\n",rclock.Addr,avg-rclock.Delta)
+         }
+
+       }()
      }
    }
 
@@ -435,7 +514,7 @@ func main() {
   case "-m":
     address := os.Args[2]
     time := 2
-    threshold := 5
+    threshold := 5000
     slavesfile := "slaves"
     logfile := os.Args[4]//os.Args[6]
 
