@@ -1,0 +1,5 @@
+(?<host>\S*) (?<clock>{.*})\n(?<event>.*)\n(?<dump>.*)
+
+906302044 {"906302044":1}
+Initialization Complete
+

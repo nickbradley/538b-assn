@@ -1,7 +1,7 @@
 package main
 
 import (
-//  "time"
+  "time"
   "fmt"
   "strconv"
   "os"
@@ -45,25 +45,26 @@ func readLines(path string) ([]string, error) {
 /********* SLAVE **********/
 
 type Clock struct {
-  time int
+  Time int
 }
 func(this *Clock) GetTime() int {
-  return this.time
+  return this.Time
 }
 func(this *Clock) SetTime(time int) {
-  this.time = time
+  this.Time = time
 }
 func(this *Clock) Correct(delta int) {
-    this.time =+ delta
+    this.Time += delta
 }
 func(this *Clock) ToString() string {
-  return strconv.Itoa(this.time)
+  return strconv.Itoa(this.Time)
 }
 
 
 func slave(address string, initTime int, logfile string) {
   // Setup connection to listen for incoming UDP packets
   addr,err := net.ResolveUDPAddr("udp", address)
+  //conn,err := net.DialUDP("udp", nil, addr)
   conn,err := net.ListenUDP("udp", addr)
 
   if err != nil {
@@ -77,34 +78,35 @@ func slave(address string, initTime int, logfile string) {
   clock := Clock{initTime}
   fmt.Println("Set clock to", clock.ToString())
 
-//  ticker := time.NewTicker(time.Millisecond * 500)
-//  defer ticker.Stop()
+ ticker := time.NewTicker(time.Millisecond * 500)
+ defer ticker.Stop()
 
   // thread to update slave's local clock
-  // go func() {
-  //   for t := range ticker.C {
-  //     oldTime := clock.GetTime()
-  //     clock.SetTime(oldTime + 1)
-  //     //fmt.Println("Clock updated to ", clock.ToString())
-  //     //fmt.Println(t)
-  //   }
-  // }()
+  go func() {
+    for {
+      select {
+      case <- ticker.C:
+        oldTime := clock.GetTime()
+        clock.SetTime(oldTime + 1)
+        fmt.Println("Clock updated to ", clock.ToString())
+      }
+    }
+  }()
 
   // loop waiting for query from master
   for {
-    fmt.Println("Waiting for msg")
-    // block waiting for request
     buf := make([]byte, 1024)
     var inRequest Request
-    conn.ReadFromUDP(buf)  // block waiting for reply
-    fmt.Println("Msg received")
+    _,raddr,_ := conn.ReadFromUDP(buf)  // block waiting for reply
 
     Logger.UnpackReceive("Receiving message", buf, &inRequest)
 
     switch inRequest.Verb {
     case "GET":
-      //send clock
-      fmt.Println("GOT REQUEST")
+      fmt.Println("Master requested my clock value")
+      sendClock := Logger.PrepareSend("Sending Message", clock)
+      conn.WriteToUDP(sendClock,raddr)
+      fmt.Println("I sent Master my clock value")
     case "PUT":
       delta := inRequest.Payload
       clock.Correct(delta)
@@ -117,8 +119,9 @@ func slave(address string, initTime int, logfile string) {
 
 /******** END SLAVE **********/
 
-func master(address string, time int, threshold int, slavesfile string, logfile string) {
+func master(address string, initTime int, threshold int, slavesfile string, logfile string) {
 
+  clock := clock{initTime}
 }
 
 
@@ -147,17 +150,32 @@ func main() {
   log.Println("Running in master mode with address ", address)
     // Testing slave
     addr,_ := net.ResolveUDPAddr("udp", address)
-    conn,err := net.DialUDP("udp", nil, addr)
+    conn,err := net.DialUDP("udp", nil, addr)  // slave address
+    //conn,err := net.ListenUDP("udp", addr) // slave address
 
     if err != nil {
       log.Fatal("Couldn't connect")
     }
     //conn.Write([]byte("GET"))
-    fmt.Println("Message should be sent")
+     fmt.Println("Message should be sent")
      Logger := govec.Initialize("Slave process", logfile)
-     outRequest := Request{"GET",0}
+
+     outRequest := Request{"PUT",1000}
      finalSend := Logger.PrepareSend("Sending Message", outRequest)
      conn.Write(finalSend)
+
+     outRequest = Request{"GET",1000}
+     finalSend = Logger.PrepareSend("Sending Message", outRequest)
+     conn.Write(finalSend)
+
+
+      //Rcv clock
+      buf := make([]byte, 1024)
+      var slaveClock Clock
+      conn.ReadFromUDP(buf)  // block waiting for reply
+      Logger.UnpackReceive("Receiving message", buf, &slaveClock)
+      fmt.Println("Slave clock is set to", slaveClock)
+
 
   case "-s":
     address := os.Args[2]

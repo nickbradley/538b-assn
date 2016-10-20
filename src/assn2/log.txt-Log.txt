@@ -1,0 +1,14 @@
+Slave process {"Slave process":1}
+Initialization Complete
+Slave process {"Slave process":2}
+Sending Message
+Slave process {"Slave process":3}
+Sending Message
+Slave process {"Slave process":8}
+Receiving message
+Slave process {"Slave process":9}
+Receiving message
+Slave process {"Slave process":10}
+Sending Message
+Slave process {"Slave process":10}
+Receiving message

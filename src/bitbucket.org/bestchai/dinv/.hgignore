@@ -1,0 +1,15 @@
+#use glob syntax
+syntax: glob
+*.gz
+*.inv
+*.dtrace
+*.sw[a-z]
+*.txt
+savedtest*
+mod_*
+TestPrograms/*.txt
+TestPrograms/t3/*.txt
+
+examples/ricartagrawala/gonadoresults/*
+examples/chainkv/results/*
+userstudy/*
