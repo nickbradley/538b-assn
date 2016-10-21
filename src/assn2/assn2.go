@@ -104,8 +104,10 @@ func slave(address string, initTime int, logfile string) {
   clock := Clock{initTime}
   fmt.Println("Set clock to", clock.ToString())
 
-   clockTicker := time.NewTicker(time.Millisecond * 500)
-   defer clockTicker.Stop()
+
+
+  clockTicker := time.NewTicker(time.Millisecond * 500)
+  defer clockTicker.Stop()
 
   // thread to update slave's local clock
   go func() {
@@ -192,16 +194,18 @@ func master(address string, initTime int, threshold int, slavesfile string, logf
 
 
    // poll slaves every 3 seconds
-   pollTicker := time.NewTicker(3 * time.Second)
+   pollTicker := time.NewTicker(5 * time.Second)
    defer pollTicker.Stop()
 
    // thread to poll slaves and compute delta
+   syncRound := 0
    for {
      select {
      case <- pollTicker.C:
-       fmt.Println("Starting sync round")
+       syncRound++
+       fmt.Println("Starting sync round",syncRound)
        ch := make(chan RemoteClock)
-       masterTime := clock.GetTime()
+       //masterTime := clock.GetTime()
        for i,slaveAddress := range slaveAddresses {
          go func(i int, slaveAddress string) {
            fmt.Printf("  Getting clock vaule for slave %v at %v\n",i,slaveAddress)
@@ -220,7 +224,12 @@ func master(address string, initTime int, threshold int, slavesfile string, logf
            if (err == nil) {
              Logger.UnpackReceive("Received clock value", buf, &slaveClock)
 
-             delta := slaveClock.GetTime() - masterTime
+
+
+             //delta := slaveClock.GetTime() - masterTime
+             delta := slaveClock.GetTime() - clock.GetTime()
+
+             fmt.Printf("Slave clock for %v is %v. Delta is %v-%v=%v.\n",addr, slaveClock.GetTime(), slaveClock.GetTime(),clock.GetTime(),delta)
              ch <- RemoteClock{delta, addr}
            }
          }(i, slaveAddress)
@@ -232,6 +241,7 @@ func master(address string, initTime int, threshold int, slavesfile string, logf
              time.Sleep(1 * time.Second)
              timeout <- true
          }()
+
          timesReceived := 0
          remoteClocks := make([]RemoteClock, len(slaveAddresses))
          L: for {
@@ -241,7 +251,7 @@ func master(address string, initTime int, threshold int, slavesfile string, logf
              remoteClocks[timesReceived] = val
              timesReceived++
 
-             fmt.Printf("Times rvcd %v of %v\n",timesReceived,len(slaveAddresses))
+             //fmt.Printf("Times rvcd %v of %v\n",timesReceived,len(slaveAddresses))
              if (timesReceived >= len(slaveAddresses)){
                //fmt.Println("All slaves repsonded.")
                break L
@@ -254,22 +264,24 @@ func master(address string, initTime int, threshold int, slavesfile string, logf
 
          // Derive the deltas, compute avg and adjust the master and slave clocks
          deltas := make([]int, timesReceived)
+
          for i,rclock := range remoteClocks[0:timesReceived] {
            deltas[i] = rclock.Delta
          }
 
          avg := getAvg(deltas, threshold)
 
-         fmt.Printf("Adjusting master by %v. New clock value is %v.\n",avg,clock.GetTime())
          clock.Correct(avg)  // adjust the master's clock
-
+         fmt.Printf("Adjusting master by %v. New clock value is %v.\n",avg,clock.GetTime())
+         fmt.Println(remoteClocks)
          for _,rclock := range remoteClocks[0:timesReceived] {
            fmt.Printf("Adjusting %v by %v\n",rclock.Addr,avg-rclock.Delta)
-           go func() {
+           go func(rclock RemoteClock) {
               outRequest := Request{"PUT",avg-rclock.Delta}
               finalSend := Logger.PrepareSend("Sending adjust value", outRequest)
+              fmt.Printf("Sending request to %v for sync round %v.\n",rclock.Addr, syncRound)
               conn.WriteToUDP(finalSend, rclock.Addr)
-            }()
+            }(rclock)
          }
        }()
      }
@@ -290,13 +302,13 @@ func main() {
     threshold,_ := strconv.Atoi(os.Args[4])
     slavesfile := os.Args[5]
     logfile := os.Args[6]
-    log.Println("Running in master mode with address %s", address)
+    log.Printf("Running in master mode with address %v\n", address)
     master(address, time, threshold, slavesfile, logfile)
   case "-s":
     address := os.Args[2]
     time,_ := strconv.Atoi(os.Args[3])
     logfile := os.Args[4]
-    log.Println("Running in slave mode with address ", address)
+    log.Printf("Running in slave mode with address %v\n", address)
     slave(address, time, logfile)
   default:
     log.Fatal("Invalid master/slave flag.")
