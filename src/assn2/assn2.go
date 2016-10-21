@@ -229,7 +229,7 @@ func master(address string, initTime int, threshold int, slavesfile string, logf
              //delta := slaveClock.GetTime() - masterTime
              delta := slaveClock.GetTime() - clock.GetTime()
 
-             fmt.Printf("Slave clock for %v is %v. Delta is %v-%v=%v.\n",addr, slaveClock.GetTime(), slaveClock.GetTime(),clock.GetTime(),delta)
+             fmt.Printf("  Slave clock for %v is %v. Delta is %v-%v=%v.\n",addr, slaveClock.GetTime(), slaveClock.GetTime(),clock.GetTime(),delta)
              ch <- RemoteClock{delta, addr}
            }
          }(i, slaveAddress)
@@ -247,7 +247,7 @@ func master(address string, initTime int, threshold int, slavesfile string, logf
          L: for {
            select {
            case val := <-ch:
-             fmt.Printf("A slave returned %v\n",val)
+             //fmt.Printf("A slave returned %v\n",val)
              remoteClocks[timesReceived] = val
              timesReceived++
 
@@ -273,13 +273,13 @@ func master(address string, initTime int, threshold int, slavesfile string, logf
 
          clock.Correct(avg)  // adjust the master's clock
          fmt.Printf("Adjusting master by %v. New clock value is %v.\n",avg,clock.GetTime())
-         fmt.Println(remoteClocks)
+
          for _,rclock := range remoteClocks[0:timesReceived] {
            fmt.Printf("Adjusting %v by %v\n",rclock.Addr,avg-rclock.Delta)
            go func(rclock RemoteClock) {
               outRequest := Request{"PUT",avg-rclock.Delta}
               finalSend := Logger.PrepareSend("Sending adjust value", outRequest)
-              fmt.Printf("Sending request to %v for sync round %v.\n",rclock.Addr, syncRound)
+              //fmt.Printf("Sending request to %v for sync round %v.\n",rclock.Addr, syncRound)
               conn.WriteToUDP(finalSend, rclock.Addr)
             }(rclock)
          }
